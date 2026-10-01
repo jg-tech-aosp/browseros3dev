@@ -27,7 +27,16 @@ export class Taskbar {
     this._buildTray();
     await this.refreshPinnedApps();
 
-    document.getElementById('wm-taskbar-apps')?.addEventListener('contextmenu', async event => {
+    const taskbarApps = document.getElementById('wm-taskbar-apps');
+    this._bindTaskbarPreviewButtons(taskbarApps);
+    this._previewObserver = new MutationObserver(records => {
+      for (const record of records) {
+        for (const node of record.addedNodes) this._bindTaskbarPreviewButtons(node);
+      }
+    });
+    if (taskbarApps) this._previewObserver.observe(taskbarApps, { childList: true });
+
+    taskbarApps?.addEventListener('contextmenu', async event => {
       const button = event.target.closest('.wm-taskbar-btn');
       if (!button || button.classList.contains('wm-pinned-btn') || !button.dataset.appId) return;
       event.preventDefault();
@@ -42,9 +51,6 @@ export class Taskbar {
     document.addEventListener('bos:notify', e => {
       this._addNotification(e.detail.message);
     });
-    document.addEventListener('pointerover', e => this._onTaskbarPointerOver(e));
-    document.addEventListener('pointerout', e => this._onTaskbarPointerOut(e));
-
     console.log('[taskbar] Booted');
   }
 
@@ -181,27 +187,30 @@ export class Taskbar {
     this._showMenu(x, y, items);
   }
 
-  _onTaskbarPointerOver(event) {
-    if (this._previewEl?.contains(event.target)) {
-      clearTimeout(this._previewHideTimer);
-      return;
+  _bindTaskbarPreviewButtons(root) {
+    if (!root) return;
+    const buttons = [];
+    if (root.matches?.('.wm-taskbar-btn')) buttons.push(root);
+    root.querySelectorAll?.('.wm-taskbar-btn').forEach(button => buttons.push(button));
+    for (const button of buttons) {
+      if (button._bosPreviewBound) continue;
+      button._bosPreviewBound = true;
+      button.addEventListener('mouseenter', () => {
+        clearTimeout(this._previewTimer);
+        clearTimeout(this._previewHideTimer);
+        this._previewTimer = setTimeout(() => {
+          if (button.isConnected) this._showWindowPreview(button);
+        }, 180);
+      });
+      button.addEventListener('mouseleave', event => {
+        if (this._previewEl?.contains(event.relatedTarget)) {
+          clearTimeout(this._previewHideTimer);
+          return;
+        }
+        clearTimeout(this._previewTimer);
+        this._previewHideTimer = setTimeout(() => this._hideWindowPreview(), 180);
+      });
     }
-    const button = event.target.closest?.('.wm-taskbar-btn');
-    if (!button || button === event.relatedTarget || button.contains(event.relatedTarget)) return;
-    clearTimeout(this._previewTimer);
-    clearTimeout(this._previewHideTimer);
-    this._previewTimer = setTimeout(() => this._showWindowPreview(button), 320);
-  }
-
-  _onTaskbarPointerOut(event) {
-    const button = event.target.closest?.('.wm-taskbar-btn');
-    if (button && (button === event.relatedTarget || button.contains(event.relatedTarget))) return;
-    if (this._previewEl?.contains(event.relatedTarget)) {
-      clearTimeout(this._previewHideTimer);
-      return;
-    }
-    clearTimeout(this._previewTimer);
-    this._previewHideTimer = setTimeout(() => this._hideWindowPreview(), 140);
   }
 
   _showWindowPreview(button) {
@@ -256,9 +265,10 @@ export class Taskbar {
       panel.appendChild(card);
     });
 
-    panel.addEventListener('pointerenter', () => clearTimeout(this._previewHideTimer));
-    panel.addEventListener('pointerleave', () => {
-      this._previewHideTimer = setTimeout(() => this._hideWindowPreview(), 140);
+    panel.addEventListener('mouseenter', () => clearTimeout(this._previewHideTimer));
+    panel.addEventListener('mouseleave', event => {
+      if (event.relatedTarget?.closest?.('.wm-taskbar-btn')) return;
+      this._previewHideTimer = setTimeout(() => this._hideWindowPreview(), 180);
     });
     document.body.appendChild(panel);
     this._previewEl = panel;
