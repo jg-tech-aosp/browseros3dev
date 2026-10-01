@@ -6,7 +6,7 @@
  * Never use IndexedDB directly elsewhere — always go through this.
  */
 
-const DB_NAME    = 'BrowserOS';
+const DB_NAME    = 'BrowserOS3Dev';
 const DB_VERSION = 3;
 
 // ─── Internal helpers ────────────────────────────────────────────────────────
