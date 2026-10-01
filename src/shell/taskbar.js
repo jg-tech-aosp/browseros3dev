@@ -18,6 +18,9 @@ export class Taskbar {
     this._kernel   = kernel;
     this._notifications = []; // history
     this._unread        = 0;
+    this._previewTimer = null;
+    this._previewHideTimer = null;
+    this._previewEl = null;
   }
 
   async boot() {
@@ -28,6 +31,8 @@ export class Taskbar {
     document.addEventListener('bos:notify', e => {
       this._addNotification(e.detail.message);
     });
+    document.addEventListener('pointerover', e => this._onTaskbarPointerOver(e));
+    document.addEventListener('pointerout', e => this._onTaskbarPointerOut(e));
 
     console.log('[taskbar] Booted');
   }
@@ -42,6 +47,17 @@ export class Taskbar {
 
     container.querySelectorAll('.wm-pinned-btn').forEach(b => b.remove());
 
+    const pinnedIds = new Set(pinned);
+    for (const [instanceId, win] of this._wm._windows) {
+      if (win.appId && pinnedIds.has(win.appId)) {
+        container.querySelectorAll('.wm-taskbar-btn[data-instance-id]').forEach(button => {
+          if (button.dataset.instanceId === instanceId) button.remove();
+        });
+      } else {
+        this._wm._addTaskbarBtn(instanceId, win.title, win.icon, win.appId);
+      }
+    }
+
     for (const appId of pinned) {
       // Check DB first, then fall back to native system app
       let app = allApps.find(a => a.id === appId);
@@ -54,6 +70,7 @@ export class Taskbar {
       const firstWin = container.querySelector('.wm-taskbar-btn:not(.wm-pinned-btn)');
       container.insertBefore(btn, firstWin || null);
     }
+    this._wm._syncTaskbarButtons();
   }
 
   _makePinnedBtn(app) {
@@ -66,11 +83,12 @@ export class Taskbar {
       <span class="wm-tb-label">${app.name}</span>
     `;
 
-    // Show running dot if any instance is running
+    // Show a running indicator when one or more windows belong to this app.
     this._updateRunningDot(btn, app.id);
+    if (this._wm._windows.get(this._wm._activeId)?.appId === app.id) btn.classList.add('active');
 
     btn.onclick = async () => {
-      const running = this._kernel.registry.allOf(app.id);
+      const running = this._runningWindows(app.id);
       if (running.length === 0) {
         try {
           // Check if it's a native system app first
@@ -89,11 +107,11 @@ export class Taskbar {
         else if (this._wm._activeId === id)  { this._wm.minimize(id); }
         else                                  { this._wm.focus(id); }
       } else {
-        // Multiple instances — focus the next one in rotation
-        const ids = running.map(r => r.instanceId);
-        const cur = ids.indexOf(this._wm._activeId);
-        const next = ids[(cur + 1) % ids.length];
-        this._wm.focus(next);
+        // Cycle through this app's windows, restoring a minimized one as needed.
+        const current = running.findIndex(win => win.instanceId === this._wm._activeId);
+        const next = running[(current + 1) % running.length];
+        if (next.state.minimized) this._wm.minimize(next.instanceId);
+        this._wm.focus(next.instanceId);
       }
     };
 
@@ -105,9 +123,16 @@ export class Taskbar {
     return btn;
   }
 
+  _runningWindows(appId) {
+    return [...this._wm._windows.entries()]
+      .filter(([, win]) => win.appId === appId)
+      .map(([instanceId, win]) => ({ ...win, instanceId }));
+  }
+
   _updateRunningDot(btn, appId) {
     btn.querySelector('.wm-running-dot')?.remove();
-    const running = this._kernel?.registry.isRunning(appId);
+    const running = this._runningWindows(appId).length > 0;
+    btn.classList.toggle('running', running);
     if (running) {
       const dot = document.createElement('span');
       dot.className = 'wm-running-dot';
@@ -116,12 +141,15 @@ export class Taskbar {
   }
 
   _showPinnedMenu(x, y, app, btn) {
-    const running = this._kernel.registry.allOf(app.id);
+    const running = this._runningWindows(app.id);
     const items   = [];
 
     if (running.length > 0) {
       items.push({ label: '📂 Show all windows', action: () => {
-        running.forEach(r => { this._wm.minimize(r.instanceId); this._wm.focus(r.instanceId); });
+        running.forEach(win => {
+          if (win.state.minimized) this._wm.minimize(win.instanceId);
+          this._wm.focus(win.instanceId);
+        });
       }});
       items.push({ label: '✕ Close all', action: () => {
         running.forEach(r => this._wm.close(r.instanceId));
@@ -142,7 +170,95 @@ export class Taskbar {
     this._showMenu(x, y, items);
   }
 
-  // ─── System tray ───────────────────────────────────────────────────────────
+  _onTaskbarPointerOver(event) {
+    if (this._previewEl?.contains(event.target)) {
+      clearTimeout(this._previewHideTimer);
+      return;
+    }
+    const button = event.target.closest?.('.wm-taskbar-btn');
+    if (!button || button === event.relatedTarget || button.contains(event.relatedTarget)) return;
+    clearTimeout(this._previewTimer);
+    clearTimeout(this._previewHideTimer);
+    this._previewTimer = setTimeout(() => this._showWindowPreview(button), 320);
+  }
+
+  _onTaskbarPointerOut(event) {
+    const button = event.target.closest?.('.wm-taskbar-btn');
+    if (button && (button === event.relatedTarget || button.contains(event.relatedTarget))) return;
+    if (this._previewEl?.contains(event.relatedTarget)) {
+      clearTimeout(this._previewHideTimer);
+      return;
+    }
+    clearTimeout(this._previewTimer);
+    this._previewHideTimer = setTimeout(() => this._hideWindowPreview(), 140);
+  }
+
+  _showWindowPreview(button) {
+    this._hideWindowPreview();
+    const windows = button.dataset.appId
+      ? this._runningWindows(button.dataset.appId)
+      : [this._wm._windows.get(button.dataset.instanceId)]
+          .filter(Boolean)
+          .map(win => ({ ...win, instanceId: button.dataset.instanceId }));
+    if (!windows.length) return;
+
+    const panel = document.createElement('div');
+    panel.id = 'bos-taskbar-preview';
+    panel.setAttribute('role', 'group');
+    panel.setAttribute('aria-label', 'Open windows');
+    panel.style.cssText = 'position:fixed;bottom:calc(var(--wm-taskbar-h) + 10px);display:flex;gap:10px;max-width:min(92vw,960px);overflow-x:auto;padding:10px;background:var(--wm-panel-bg);border:1px solid var(--wm-panel-border);border-radius:12px;box-shadow:0 12px 36px rgba(0,0,0,.42);backdrop-filter:var(--wm-backdrop-filter,blur(20px));z-index:9500';
+    const rect = button.getBoundingClientRect();
+    const width = Math.min(960, window.innerWidth - 24, windows.length * 222 + 20);
+    panel.style.left = Math.max(12, Math.min(rect.left + rect.width / 2 - width / 2, window.innerWidth - width - 12)) + 'px';
+    panel.style.width = width + 'px';
+
+    windows.forEach(win => {
+      const title = win.el.querySelector('.wm-titlebar-title')?.textContent || win.title || 'App';
+      const icon = win.el.querySelector('.wm-titlebar-icon')?.textContent || win.icon || '🪟';
+      const card = document.createElement('button');
+      card.type = 'button';
+      card.title = 'Switch to ' + title;
+      card.style.cssText = 'width:212px;flex:0 0 212px;text-align:left;padding:8px;border:1px solid var(--wm-panel-border);border-radius:9px;background:var(--wm-control-bg);color:var(--wm-text);cursor:pointer;font:inherit';
+      const miniature = document.createElement('div');
+      miniature.style.cssText = 'height:112px;border:1px solid var(--wm-border);border-radius:6px;overflow:hidden;background:var(--wm-bg);margin-bottom:8px;display:flex;flex-direction:column';
+      const titlebar = document.createElement('div');
+      titlebar.style.cssText = 'height:20px;display:flex;align-items:center;gap:5px;padding:0 7px;background:var(--wm-titlebar);color:var(--wm-titlebar-txt);font-size:10px;overflow:hidden';
+      const miniIcon = document.createElement('span');
+      miniIcon.textContent = icon;
+      const miniTitle = document.createElement('span');
+      miniTitle.textContent = title;
+      miniTitle.style.cssText = 'overflow:hidden;text-overflow:ellipsis;white-space:nowrap';
+      titlebar.append(miniIcon, miniTitle);
+      const previewBody = document.createElement('div');
+      previewBody.style.cssText = 'flex:1;display:flex;align-items:center;justify-content:center;background:linear-gradient(145deg,var(--wm-bg),var(--wm-hover));font-size:28px';
+      previewBody.textContent = icon;
+      miniature.append(titlebar, previewBody);
+      const caption = document.createElement('div');
+      caption.textContent = title + (win.state.minimized ? ' · Minimized' : '');
+      caption.style.cssText = 'font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap';
+      card.append(miniature, caption);
+      card.onclick = () => {
+        if (win.state.minimized) this._wm.minimize(win.instanceId);
+        this._wm.focus(win.instanceId);
+        this._hideWindowPreview();
+      };
+      panel.appendChild(card);
+    });
+
+    panel.addEventListener('pointerenter', () => clearTimeout(this._previewHideTimer));
+    panel.addEventListener('pointerleave', () => {
+      this._previewHideTimer = setTimeout(() => this._hideWindowPreview(), 140);
+    });
+    document.body.appendChild(panel);
+    this._previewEl = panel;
+  }
+
+  _hideWindowPreview() {
+    clearTimeout(this._previewTimer);
+    if (this._previewEl) this._previewEl.remove();
+    this._previewEl = null;
+  }
+
 
   _buildTray() {
     const clock = document.getElementById('wm-clock');
