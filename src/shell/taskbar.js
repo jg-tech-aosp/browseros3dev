@@ -218,15 +218,30 @@ export class Taskbar {
     }
   }
 
+  _closeFlyout(panel) {
+    if (!panel || panel.dataset.closing) return;
+    if (document.documentElement.classList.contains('bos-reduce-motion')) {
+      panel.remove();
+      return;
+    }
+    panel.dataset.closing = 'true';
+    panel.classList.remove('bos-flyout-opening');
+    panel.classList.add('bos-flyout-closing');
+    const finish = () => panel.remove();
+    panel.addEventListener('animationend', finish, { once: true });
+    setTimeout(finish, 220);
+  }
+
   _toggleNotificationCenter() {
     const existing = document.getElementById('bos-notif-panel');
-    if (existing) { existing.remove(); return; }
+    if (existing) { this._closeFlyout(existing); return; }
 
     this._unread = 0;
     this._updateBadge();
 
     const panel = document.createElement('div');
     panel.id = 'bos-notif-panel';
+    panel.classList.add('bos-flyout-opening');
     panel.style.cssText = `
       position:fixed;bottom:calc(var(--wm-taskbar-h) + 8px);right:8px;
       width:320px;max-height:400px;
@@ -241,7 +256,7 @@ export class Taskbar {
     setTimeout(() => {
       const close = e => {
         if (!panel.contains(e.target) && e.target !== this._bellBtn) {
-          panel.remove();
+          this._closeFlyout(panel);
           document.removeEventListener('click', close);
         }
       };
@@ -291,10 +306,11 @@ export class Taskbar {
 
   _toggleQuickSettings() {
     const existing = document.getElementById('bos-qs-panel');
-    if (existing) { existing.remove(); return; }
+    if (existing) { this._closeFlyout(existing); return; }
 
     const panel = document.createElement('div');
     panel.id = 'bos-qs-panel';
+    panel.classList.add('bos-flyout-opening');
     panel.style.cssText = `
       position:fixed;bottom:calc(var(--wm-taskbar-h) + 8px);right:8px;
       width:300px;background:var(--wm-panel-bg);backdrop-filter:var(--wm-backdrop-filter,blur(20px));
@@ -336,7 +352,7 @@ export class Taskbar {
     // Dark mode toggle
     panel.querySelector('#qs-darkmode').onclick = async () => {
       await this._settings.set('darkMode', !this._settings.get('darkMode'));
-      panel.remove();
+      this._closeFlyout(panel);
       this._toggleQuickSettings(); // re-render
     };
 
@@ -344,14 +360,14 @@ export class Taskbar {
     panel.querySelectorAll('[data-color]').forEach(el => {
       el.onclick = async () => {
         await this._settings.set('accent', el.dataset.color);
-        panel.remove();
+        this._closeFlyout(panel);
       };
     });
 
     // Open full settings
     panel.querySelector('#qs-open-settings').onclick = () => {
       this._wm.openSystemApp('settings');
-      panel.remove();
+      this._closeFlyout(panel);
     };
 
     document.body.appendChild(panel);
@@ -359,7 +375,7 @@ export class Taskbar {
     setTimeout(() => {
       const close = e => {
         if (!panel.contains(e.target)) {
-          panel.remove();
+          this._closeFlyout(panel);
           document.removeEventListener('click', close);
         }
       };
