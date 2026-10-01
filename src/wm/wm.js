@@ -369,6 +369,7 @@ export class WindowManager {
       width:  app.width  || 700,
       height: app.height || 500,
       isSystem: true,
+      appId,
       onClose: (id) => { if (instanceOnClose) instanceOnClose(id); },
     });
     const body = document.getElementById(`wm-body-${instanceId}`);
@@ -395,8 +396,8 @@ export class WindowManager {
    * @param {Function} opts.onClose    - Called when window is closed
    * @returns {HTMLIFrameElement}
    */
-  createAppWindow({ instanceId, title, icon, width, height, srcdoc, onClose }) {
-    this._createWindow({ instanceId, title, icon, width, height, onClose });
+  createAppWindow({ instanceId, appId, title, icon, width, height, srcdoc, onClose }) {
+    this._createWindow({ instanceId, appId, title, icon, width, height, srcdoc, onClose });
     const body = document.getElementById(`wm-body-${instanceId}`);
 
     // Create sandboxed iframe
@@ -415,7 +416,7 @@ export class WindowManager {
 
   // ─── Core window factory ───────────────────────────────────────────────────
 
-  _createWindow({ instanceId, title, icon, width, height, onClose, isSystem }) {
+  _createWindow({ instanceId, appId, title, icon, width, height, onClose, isSystem }) {
     const offset = this._windows.size * 24;
     const x = 80 + offset;
     const y = 60 + offset;
@@ -447,7 +448,7 @@ export class WindowManager {
 
     // State
     const state = { minimized: false, maximized: false, prevRect: null, animationEnd: null };
-    this._windows.set(instanceId, { el, iframe: null, state, onClose });
+    this._windows.set(instanceId, { el, iframe: null, state, onClose, appId, title: title || 'App', icon: icon || '🪟' });
 
     // Wire up controls
     el.querySelector('.wm-btn-min').onclick   = e => { e.stopPropagation(); this.minimize(instanceId); };
@@ -461,7 +462,7 @@ export class WindowManager {
     this._makeResizable(el);
 
     this.focus(instanceId);
-    this._addTaskbarBtn(instanceId, title, icon);
+    this._addTaskbarBtn(instanceId, title, icon, appId);
 
     return instanceId;
   }
@@ -479,10 +480,35 @@ export class WindowManager {
       win.el.classList.toggle('focused', id === instanceId);
     });
 
-    // Update taskbar
+    this._syncTaskbarButtons();
+  }
+
+  _syncTaskbarButtons() {
+    const active = this._windows.get(this._activeId);
+    const activeVisible = active && !active.state.minimized ? active : null;
     document.querySelectorAll('.wm-taskbar-btn').forEach(btn => {
-      btn.classList.toggle('active', btn.dataset.instanceId === instanceId);
+      const isWindow = btn.dataset.instanceId === this._activeId && !!activeVisible;
+      const isPinnedApp = btn.classList.contains('wm-pinned-btn')
+        && !!activeVisible?.appId && btn.dataset.appId === activeVisible.appId;
+      btn.classList.toggle('active', isWindow || isPinnedApp);
     });
+  }
+
+  _syncTaskbarApp(appId) {
+    if (!appId) return;
+    const pinned = [...document.querySelectorAll('.wm-pinned-btn')]
+      .find(btn => btn.dataset.appId === appId);
+    if (!pinned) return;
+    const running = [...this._windows.values()].some(win => win.appId === appId);
+    pinned.classList.toggle('running', running);
+    let dot = pinned.querySelector('.wm-running-dot');
+    if (running && !dot) {
+      dot = document.createElement('span');
+      dot.className = 'wm-running-dot';
+      pinned.appendChild(dot);
+    } else if (!running && dot) {
+      dot.remove();
+    }
   }
 
   minimize(instanceId) {
@@ -526,8 +552,7 @@ export class WindowManager {
         w.el.classList.add('wm-window-restoring');
       }
     }
-    const btn = document.querySelector(`.wm-taskbar-btn[data-instance-id="${instanceId}"]`);
-    if (btn) btn.classList.toggle('active', !minimizing);
+    this._syncTaskbarButtons();
   }
 
   maximize(instanceId) {
@@ -556,6 +581,7 @@ export class WindowManager {
   close(instanceId) {
     const w = this._windows.get(instanceId);
     if (!w) return;
+    const appId = w.appId;
     w.el.remove();
     this._windows.delete(instanceId);
     // Remove taskbar button
@@ -565,6 +591,8 @@ export class WindowManager {
     if (this._kernel) this._kernel.unregisterApp(instanceId);
     // Call onClose callback
     if (w.onClose) w.onClose(instanceId);
+    this._syncTaskbarApp(appId);
+    this._syncTaskbarButtons();
   }
 
   // ─── UI methods called by kernel handlers ──────────────────────────────────
@@ -706,10 +734,20 @@ export class WindowManager {
 
   // ─── Taskbar ───────────────────────────────────────────────────────────────
 
-  _addTaskbarBtn(instanceId, title, icon) {
+  _addTaskbarBtn(instanceId, title, icon, appId) {
+    const pinned = [...document.querySelectorAll('.wm-pinned-btn')]
+      .find(btn => btn.dataset.appId === appId);
+    if (pinned) {
+      this._syncTaskbarApp(appId);
+      this._syncTaskbarButtons();
+      return;
+    }
+    const existing = document.querySelector(`.wm-taskbar-btn[data-instance-id="${instanceId}"]`);
+    if (existing) return;
     const btn = document.createElement('button');
     btn.className = 'wm-taskbar-btn active';
     btn.dataset.instanceId = instanceId;
+    if (appId) btn.dataset.appId = appId;
     btn.innerHTML = `
       <span>${icon || '🪟'}</span>
       <span class="wm-tb-label">${title || 'App'}</span>
@@ -723,6 +761,7 @@ export class WindowManager {
       else                           { this.focus(instanceId); }
     };
     document.getElementById('wm-taskbar-apps').appendChild(btn);
+    this._syncTaskbarButtons();
   }
 
   // ─── Drag & resize ─────────────────────────────────────────────────────────
