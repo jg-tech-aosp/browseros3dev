@@ -87,7 +87,11 @@ export class StartMenu {
 
     const userEl = document.createElement('div');
     userEl.style.cssText = 'display:flex;align-items:center;gap:8px;font-size:13px;color:var(--wm-text)';
-    userEl.innerHTML = '<span style="font-size:20px">👤</span><span>User</span>';
+    const profile = this._settings.get('userProfile') || {};
+    userEl.innerHTML = '<span style="font-size:20px">👤</span>';
+    const userName = document.createElement('span');
+    userName.textContent = profile.name || 'User';
+    userEl.appendChild(userName);
 
     const powerBtn = document.createElement('button');
     powerBtn.textContent = '⏻';
