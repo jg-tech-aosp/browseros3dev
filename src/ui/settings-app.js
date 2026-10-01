@@ -24,6 +24,7 @@ export function registerSettingsApp({ wm, settings, kernel, db, fs }) {
       var SECTIONS = [
         { id:'appearance', label:'🎨 Appearance' },
         { id:'display',    label:'🖥️ Display' },
+        { id:'accessibility', label:'♿ Accessibility' },
         { id:'apps',       label:'📦 Apps' },
         { id:'storage',    label:'💾 Storage' },
         { id:'system',     label:'⚙️ System' },
@@ -67,6 +68,7 @@ export function registerSettingsApp({ wm, settings, kernel, db, fs }) {
 
     if (id === 'appearance') renderAppearance(main);
     else if (id === 'display')    renderDisplay(main);
+    else if (id === 'accessibility') renderAccessibility(main);
     else if (id === 'apps')       renderApps(main);
     else if (id === 'storage')    renderStorage(main);
     else if (id === 'system')     renderSystem(main);
@@ -344,6 +346,33 @@ export function registerSettingsApp({ wm, settings, kernel, db, fs }) {
         await settings.set('showClock', val);
         var clock = document.getElementById('wm-clock');
         if (clock) clock.style.display = val ? '' : 'none';
+      })
+    ));
+  }
+
+  // ── Accessibility ───────────────────────────────────────────────────────────
+
+  function renderAccessibility(main) {
+    main.appendChild(h2('Accessibility'));
+
+    var scale = document.createElement('select');
+    scale.setAttribute('aria-label', 'Interface size');
+    scale.style.cssText = 'padding:8px 10px;border:1px solid var(--wm-border);border-radius:6px;background:var(--wm-hover);color:var(--wm-text);font:inherit;min-width:110px';
+    [100, 115, 130].forEach(function(value) {
+      var option = document.createElement('option');
+      option.value = String(value);
+      option.textContent = value + '%';
+      scale.appendChild(option);
+    });
+    scale.value = String(settings.get('interfaceScale') || 100);
+    scale.onchange = function() {
+      settings.set('interfaceScale', Number(scale.value));
+    };
+    main.appendChild(row('Interface Size', 'Scale the BrowserOS desktop and its controls', scale));
+
+    main.appendChild(row('Reduce Motion', 'Limit animations and transitions throughout BrowserOS',
+      toggle(settings.get('reduceMotion') === true, async function(value) {
+        await settings.set('reduceMotion', value);
       })
     ));
   }
