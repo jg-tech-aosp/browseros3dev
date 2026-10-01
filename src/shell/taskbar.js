@@ -27,6 +27,17 @@ export class Taskbar {
     this._buildTray();
     await this.refreshPinnedApps();
 
+    document.getElementById('wm-taskbar-apps')?.addEventListener('contextmenu', async event => {
+      const button = event.target.closest('.wm-taskbar-btn');
+      if (!button || button.classList.contains('wm-pinned-btn') || !button.dataset.appId) return;
+      event.preventDefault();
+      const app = (await this._db.apps.all()).find(item => item.id === button.dataset.appId)
+        || (this._wm._systemApps.has(button.dataset.appId)
+          ? { id: button.dataset.appId, name: this._wm._systemApps.get(button.dataset.appId).title }
+          : null);
+      if (app) this._showPinnedMenu(event.clientX, event.clientY, app, button);
+    });
+
     // Listen for notification events from WM
     document.addEventListener('bos:notify', e => {
       this._addNotification(e.detail.message);
