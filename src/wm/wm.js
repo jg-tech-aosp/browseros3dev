@@ -82,7 +82,7 @@ const WM_STYLES = `
     from { opacity:0; transform:translateY(12px) scale(.94); }
     to { opacity:1; transform:translateY(0) scale(1); }
   }
-  .wm-window.focused {}
+  .wm-window.focused {
     box-shadow: var(--wm-shadow), 0 0 0 1px var(--wm-accent);
   }
   .wm-window.minimized { display: none; }
