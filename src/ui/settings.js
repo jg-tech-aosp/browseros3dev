@@ -14,6 +14,8 @@ const DEFAULTS = {
   darkMode:   true,
   transparency: true,
   showClock:  true,
+  interfaceScale: 100,
+  reduceMotion: false,
   pinnedApps: ['filemanager', 'texteditor', 'terminal', 'calculator', 'browser', 'paint', 'appstore', 'musicplayer', 'markdownviewer', 'sysmonitor'],
   userProfile: { name: 'User', avatar: null },
 };
@@ -30,6 +32,7 @@ export class Settings {
     const saved = await this._db.settings.all();
     // Merge saved over defaults
     this._cache = { ...DEFAULTS, ...saved };
+    this.applyAccessibility();
     console.log('[settings] Loaded');
   }
 
@@ -53,11 +56,26 @@ export class Settings {
     return { ...this._cache };
   }
 
+  applyAccessibility() {
+    const scale = [100, 115, 130].includes(Number(this._cache.interfaceScale))
+      ? Number(this._cache.interfaceScale) : 100;
+    document.documentElement.style.zoom = scale === 100 ? '' : scale + '%';
+    document.documentElement.classList.toggle('bos-reduce-motion', !!this._cache.reduceMotion);
+    let style = document.getElementById('bos-accessibility-styles');
+    if (!style) {
+      style = document.createElement('style');
+      style.id = 'bos-accessibility-styles';
+      style.textContent = 'html.bos-reduce-motion *,html.bos-reduce-motion *::before,html.bos-reduce-motion *::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important;scroll-behavior:auto!important}';
+      document.head.appendChild(style);
+    }
+  }
+
   // ─── Write ─────────────────────────────────────────────────────────────────
 
   async set(key, value) {
     this._cache[key] = value;
     await this._db.settings.set(key, value);
+    this.applyAccessibility();
     // Fire onChange with new theme
     const theme = this.getTheme();
     this._handlers.forEach(fn => fn(theme, key, value));
@@ -68,6 +86,7 @@ export class Settings {
       this._cache[key] = value;
       await this._db.settings.set(key, value);
     }
+    this.applyAccessibility();
     const theme = this.getTheme();
     this._handlers.forEach(fn => fn(theme, null, null));
   }
@@ -77,6 +96,7 @@ export class Settings {
       await this._db.settings.set(key, value);
     }
     this._cache = { ...DEFAULTS };
+    this.applyAccessibility();
     const theme = this.getTheme();
     this._handlers.forEach(fn => fn(theme, null, null));
   }
