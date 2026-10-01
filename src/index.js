@@ -154,6 +154,9 @@ function showFirstRunOnboarding(settings) {
       await settings.setMany({
         userProfile: { ...profile, name },
         darkMode,
+        wallpaper: darkMode
+          ? settings.get('wallpaper')
+          : 'linear-gradient(135deg,#b8d4e3,#d9ecf7)',
         onboardingComplete: true,
       });
       document.dispatchEvent(new CustomEvent('bos:profileChanged', { detail: { name } }));
