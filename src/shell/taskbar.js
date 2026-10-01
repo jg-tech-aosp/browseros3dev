@@ -318,7 +318,15 @@ export class Taskbar {
 
   _toggleQuickSettings() {
     const existing = document.getElementById('bos-qs-panel');
-    if (existing) { this._closeFlyout(existing); return; }
+    if (existing) {
+      if (existing.dataset.closing) {
+        clearTimeout(existing._flyoutCloseTimer);
+        existing.remove();
+      } else {
+        this._closeFlyout(existing);
+        return;
+      }
+    }
 
     const panel = document.createElement('div');
     panel.id = 'bos-qs-panel';
