@@ -65,10 +65,24 @@ const WM_STYLES = `
     min-width: 320px;
     min-height: 240px;
     overflow: hidden;
-    transition: box-shadow 0.15s;
+    transition: box-shadow 0.15s, top 0.24s cubic-bezier(.2,.75,.25,1), left 0.24s cubic-bezier(.2,.75,.25,1), width 0.24s cubic-bezier(.2,.75,.25,1), height 0.24s cubic-bezier(.2,.75,.25,1), border-radius 0.24s ease;
     user-select: none;
   }
-  .wm-window.focused {
+  .wm-window.wm-window-opening { animation: wm-window-open 0.22s cubic-bezier(.2,.75,.25,1) both; }
+  .wm-window.wm-window-minimizing { animation: wm-window-minimize 0.18s ease-in both; pointer-events:none; }
+  .wm-window.wm-window-restoring { animation: wm-window-restore 0.2s cubic-bezier(.2,.75,.25,1) both; }
+  @keyframes wm-window-open {
+    from { opacity:0; transform:translateY(10px) scale(.97); }
+    to { opacity:1; transform:translateY(0) scale(1); }
+  }
+  @keyframes wm-window-minimize {
+    to { opacity:0; transform:translateY(12px) scale(.94); }
+  }
+  @keyframes wm-window-restore {
+    from { opacity:0; transform:translateY(12px) scale(.94); }
+    to { opacity:1; transform:translateY(0) scale(1); }
+  }
+  .wm-window.focused {}
     box-shadow: var(--wm-shadow), 0 0 0 1px var(--wm-accent);
   }
   .wm-window.minimized { display: none; }
@@ -208,8 +222,18 @@ const WM_STYLES = `
     line-height: 1.4;
   }
 
+  /* ── Desktop menu and flyout motion ── */
+  #bos-startmenu.bos-menu-opening { animation: bos-menu-in 0.18s cubic-bezier(.2,.75,.25,1) both; }
+  #bos-startmenu.bos-menu-closing { animation: bos-menu-out 0.15s ease-in both; pointer-events:none; }
+  .bos-flyout-opening { transform-origin:bottom right; animation:bos-flyout-in 0.18s cubic-bezier(.2,.75,.25,1) both; }
+  .bos-flyout-closing { transform-origin:bottom right; animation:bos-flyout-out 0.14s ease-in both; pointer-events:none; }
+  @keyframes bos-menu-in { from { opacity:0; transform:translateY(12px) scale(.97); } to { opacity:1; transform:translateY(0) scale(1); } }
+  @keyframes bos-menu-out { to { opacity:0; transform:translateY(8px) scale(.98); } }
+  @keyframes bos-flyout-in { from { opacity:0; transform:translateY(10px) scale(.97); } to { opacity:1; transform:translateY(0) scale(1); } }
+  @keyframes bos-flyout-out { to { opacity:0; transform:translateY(8px) scale(.98); } }
+
   /* ── Toast notifications ── */
-  #wm-toasts {
+  #wm-toasts {}
     position: fixed;
     bottom: calc(var(--wm-taskbar-h) + 12px);
     right: 16px;
@@ -397,7 +421,7 @@ export class WindowManager {
     const y = 60 + offset;
 
     const el = document.createElement('div');
-    el.className  = 'wm-window';
+    el.className  = 'wm-window wm-window-opening';
     el.id         = `wm-win-${instanceId}`;
     el.style.cssText = `left:${x}px;top:${y}px;width:${width}px;height:${height}px;z-index:${++this._zIndex}`;
 
@@ -415,9 +439,14 @@ export class WindowManager {
     `;
 
     document.getElementById('wm-desktop').appendChild(el);
+    el.addEventListener('animationend', event => {
+      if (event.target === el && el.classList.contains('wm-window-opening')) {
+        el.classList.remove('wm-window-opening');
+      }
+    });
 
     // State
-    const state = { minimized: false, maximized: false, prevRect: null };
+    const state = { minimized: false, maximized: false, prevRect: null, animationEnd: null };
     this._windows.set(instanceId, { el, iframe: null, state, onClose });
 
     // Wire up controls
@@ -459,10 +488,46 @@ export class WindowManager {
   minimize(instanceId) {
     const w = this._windows.get(instanceId);
     if (!w) return;
-    w.state.minimized = !w.state.minimized;
-    w.el.classList.toggle('minimized', w.state.minimized);
+    const minimizing = !w.state.minimized;
+    w.state.minimized = minimizing;
+    if (w.state.animationEnd) {
+      w.el.removeEventListener('animationend', w.state.animationEnd);
+      w.state.animationEnd = null;
+    }
+    w.el.classList.remove('wm-window-minimizing', 'wm-window-restoring');
+
+    const reduceMotion = document.documentElement.classList.contains('bos-reduce-motion');
+    if (minimizing) {
+      if (reduceMotion) {
+        w.el.classList.add('minimized');
+      } else {
+        const finish = event => {
+          if (event.target !== w.el) return;
+          w.el.removeEventListener('animationend', finish);
+          w.state.animationEnd = null;
+          w.el.classList.remove('wm-window-minimizing');
+          if (w.state.minimized) w.el.classList.add('minimized');
+        };
+        w.state.animationEnd = finish;
+        w.el.addEventListener('animationend', finish);
+        w.el.classList.add('wm-window-minimizing');
+      }
+    } else {
+      w.el.classList.remove('minimized');
+      if (!reduceMotion) {
+        const finish = event => {
+          if (event.target !== w.el) return;
+          w.el.removeEventListener('animationend', finish);
+          w.state.animationEnd = null;
+          w.el.classList.remove('wm-window-restoring');
+        };
+        w.state.animationEnd = finish;
+        w.el.addEventListener('animationend', finish);
+        w.el.classList.add('wm-window-restoring');
+      }
+    }
     const btn = document.querySelector(`.wm-taskbar-btn[data-instance-id="${instanceId}"]`);
-    if (btn) btn.classList.toggle('active', !w.state.minimized);
+    if (btn) btn.classList.toggle('active', !minimizing);
   }
 
   maximize(instanceId) {
