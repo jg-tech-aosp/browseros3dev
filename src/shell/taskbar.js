@@ -227,14 +227,26 @@ export class Taskbar {
     panel.dataset.closing = 'true';
     panel.classList.remove('bos-flyout-opening');
     panel.classList.add('bos-flyout-closing');
-    const finish = () => panel.remove();
-    panel.addEventListener('animationend', finish, { once: true });
-    setTimeout(finish, 220);
+    const finish = event => {
+      if (event && event.target !== panel) return;
+      clearTimeout(panel._flyoutCloseTimer);
+      panel.remove();
+    };
+    panel.addEventListener('animationend', finish);
+    panel._flyoutCloseTimer = setTimeout(() => finish(), 220);
   }
 
   _toggleNotificationCenter() {
     const existing = document.getElementById('bos-notif-panel');
-    if (existing) { this._closeFlyout(existing); return; }
+    if (existing) {
+      if (existing.dataset.closing) {
+        clearTimeout(existing._flyoutCloseTimer);
+        existing.remove();
+      } else {
+        this._closeFlyout(existing);
+        return;
+      }
+    }
 
     this._unread = 0;
     this._updateBadge();
