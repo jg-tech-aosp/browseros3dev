@@ -427,7 +427,7 @@ export function registerSettingsApp({ wm, settings, kernel, db, fs }) {
     resetBtn.style.cssText = 'background:rgba(200,50,50,0.15);border:1px solid rgba(200,50,50,0.3);color:#ff8888;border-radius:6px;padding:8px 16px;cursor:pointer;font-size:13px;margin-top:16px';
     resetBtn.onclick = async function() {
       if (!confirm('Delete ALL files? This cannot be undone.')) return;
-      var req = indexedDB.deleteDatabase('BrowserOS');
+      var req = indexedDB.deleteDatabase('BrowserOS3Dev');
       req.onsuccess = function() { location.reload(); };
     };
     main.appendChild(resetBtn);
