@@ -17,6 +17,7 @@ export class StartMenu {
     this._settings = settings;
     this._el       = null;
     this._open     = false;
+    this._closeTimer = null;
   }
 
   boot() {
@@ -40,6 +41,7 @@ export class StartMenu {
   _build() {
     const el = document.createElement('div');
     el.id = 'bos-startmenu';
+    el.setAttribute('aria-hidden', 'true');
     el.style.cssText = `
       position:fixed;
       bottom:calc(var(--wm-taskbar-h) + 8px);
@@ -134,10 +136,19 @@ export class StartMenu {
   // ─── Open / close ──────────────────────────────────────────────────────────
 
   async openMenu() {
+    clearTimeout(this._closeTimer);
     this._open = true;
+    this._el.setAttribute('aria-hidden', 'false');
     this._el.style.display = 'flex';
+    this._el.classList.remove('bos-menu-closing', 'bos-menu-opening');
+    void this._el.offsetWidth;
+    this._el.classList.add('bos-menu-opening');
+    setTimeout(() => {
+      if (this._open) this._el.classList.remove('bos-menu-opening');
+    }, 220);
     this._searchInput.value = '';
     await this._renderDefault();
+    if (!this._open) return;
     setTimeout(() => {
       this._searchInput.focus();
       const close = e => {
@@ -151,9 +162,24 @@ export class StartMenu {
   }
 
   close() {
+    if (!this._open) return;
     this._open = false;
-    this._el.style.display = 'none';
+    this._el.setAttribute('aria-hidden', 'true');
     this._searchInput.blur();
+    this._el.classList.remove('bos-menu-opening');
+    if (document.documentElement.classList.contains('bos-reduce-motion')) {
+      this._el.classList.remove('bos-menu-closing');
+      this._el.style.display = 'none';
+      return;
+    }
+    this._el.classList.add('bos-menu-closing');
+    clearTimeout(this._closeTimer);
+    this._closeTimer = setTimeout(() => {
+      if (!this._open) {
+        this._el.style.display = 'none';
+        this._el.classList.remove('bos-menu-closing');
+      }
+    }, 170);
   }
 
   // ─── Default view ──────────────────────────────────────────────────────────
