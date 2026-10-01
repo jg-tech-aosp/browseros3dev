@@ -156,6 +156,7 @@ function showFirstRunOnboarding(settings) {
         darkMode,
         onboardingComplete: true,
       });
+      document.dispatchEvent(new CustomEvent('bos:profileChanged', { detail: { name } }));
       overlay.remove();
       style.remove();
       resolve();
