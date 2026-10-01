@@ -350,6 +350,7 @@ export class Launcher {
     const windowIcon = app.icon || app.emoji || '⚡';
     const iframe = this._wm.createAppWindow({
       instanceId,
+      appId: app.id,
       title:  app.name,
       icon:   windowIcon,
       width:  app.width,
