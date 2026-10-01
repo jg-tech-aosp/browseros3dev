@@ -21,6 +21,10 @@ export class StartMenu {
 
   boot() {
     this._build();
+    document.addEventListener('bos:profileChanged', event => {
+      const nameEl = document.getElementById('bos-startmenu-user-name');
+      if (nameEl) nameEl.textContent = event.detail?.name || 'User';
+    });
     // Ctrl+Space still works as alias
     document.addEventListener('keydown', e => {
       if (e.ctrlKey && e.code === 'Space') { e.preventDefault(); this.toggle(); }
@@ -90,6 +94,7 @@ export class StartMenu {
     const profile = this._settings.get('userProfile') || {};
     userEl.innerHTML = '<span style="font-size:20px">👤</span>';
     const userName = document.createElement('span');
+    userName.id = 'bos-startmenu-user-name';
     userName.textContent = profile.name || 'User';
     userEl.appendChild(userName);
 
